@@ -44,13 +44,13 @@ import subprocess
 
 from collections.abc import Sequence
 
-__version__ = '1.3.3'
+__version__ = '1.3.4'
 
 theme = { 'default': '' }
 
 pluginpath = [
-    os.path.expanduser('~/.dool/'),                              # home + /.dool/
-    os.path.abspath(os.path.dirname(sys.argv[0])) + '/plugins/', # binary path + /plugins/
+    os.path.expanduser('~/.dool/'),                           # home + /.dool/
+    os.path.dirname(os.path.abspath(__file__)) + '/plugins/', # binary path + /plugins/
     '/usr/share/dool/',
     '/usr/local/share/dool/',
 ]
@@ -1118,7 +1118,11 @@ class dool_io(dool):
     def vars(self):
         ret = []
         if op.disklist:
-            varlist = op.disklist
+            varlist = []
+            for x in op.disklist:
+                dev = get_dev_name(x)
+                varlist.append(dev)
+
         elif not op.full:
             varlist = ('total',)
         else:
@@ -1758,23 +1762,25 @@ ansi = {
 
 # Characters we use to draw the boxes
 char = {
-    'pipe'       : '|',
-    'colon'      : ':',
-    'gt'         : '>',
-    'space'      : ' ',
-    'dash'       : '-',
-    'plus'       : '+',
-    'underscore' : '_',
-    'sep'        : ',',
-    'title_sep'  : '|',
+    'pipe'           : '|',
+    'colon'          : ':',
+    'gt'             : '>',
+    'space'          : ' ',
+    'dash'           : '-',
+    'plus'           : '+',
+    'underscore'     : '_',
+    'sep'            : ',',
+    'title_sep'      : '|',
+    'title_sep_first': '|',
 }
 
 # Unicode chars we use to override the defaults to get cleaner boxes
 char_box_draw = {
-    'pipe'       : u'\u2502',
-    'dash'       : u'\u2504',
-    'title_sep'  : u'\u252c',
-    'colon'      : u'\u250a',
+    'pipe'           : u'\u2502',
+    'dash'           : u'\u2504',
+    'title_sep_first': u'\u252c', # T
+    'title_sep'      : u'\u253c', # +
+    'colon'          : u'\u250a',
 }
 
 # Build a theme based on the color choice 16/256
@@ -2227,14 +2233,28 @@ def cprint(var, ctype = 'f', width = 4, scale = 1000):
 def header(totlist, vislist):
     "Return the header for a set of module counters"
     line = ''
+
+    # If it's the FIRST header we have outputted
+    first_header = (update == 0)
+
     ### Process title
     for o in vislist:
         line += o.title()
         if o is not vislist[-1]:
-            line += theme['frame'] + char['title_sep']
+
+            # First header gets T
+            if (first_header):
+                sep = char['title_sep_first']
+            # All other headers get +
+            else:
+                sep = char['title_sep']
+
+            line += theme['frame'] + sep
         elif totlist != vislist:
             line += theme['title'] + char['gt']
+
     line += '\n'
+
     ### Process subtitle
     for o in vislist:
         line += o.subtitle()
@@ -2242,6 +2262,7 @@ def header(totlist, vislist):
             line += theme['frame'] + char['pipe']
         elif totlist != vislist:
             line += theme['title'] + char['gt']
+
     return line + '\n'
 
 def csv_header(totlist):
@@ -2649,6 +2670,8 @@ def main():
     if op.color == None:
         op.color = get_term_color()
 
+    ### If we're *not* doing ASCII then we are using the
+    ### Unicode chars so we overwrite the ASCII ones
     if not op.use_ascii:
         for key in char_box_draw:
             char[key] = char_box_draw[key]
@@ -2714,18 +2737,19 @@ def main():
 
         try:
             if pluginfile not in globals():
-                exec(open(pluginfile).read())
-                exec('global plug; plug = dool_plugin(); del(dool_plugin)')
+                scope = {}
+                exec(open(pluginfile).read(), globals(), scope)
+                plug = scope['dool_plugin']()
                 plug.filename = pluginfile
                 plug.check()
                 plug.prepare()
             else:
-                exec('global plug; plug = %s()' % pluginfile)
+                plug = globals()[pluginfile]()
                 plug.check()
                 plug.prepare()
 
         except Exception as e:
-            if mod == mods[-1]:
+            if plugin == op.plugins[-1]:
                 print('Module %s failed to load. (%s)' % (pluginfile, e), file=sys.stderr)
             elif op.debug:
                 print('Module %s failed to load, trying another. (%s)' % (pluginfile, e), file=sys.stderr)
@@ -2848,6 +2872,8 @@ def perform(update):
             ### If we're in a delay we just go to column 0 and overwrite what's there
             elif loop != 0:
                 newline = ansi['clearline'] + ansi['column_zero'];
+        elif not op.update:
+            newline = "\n"
 
         ### Display header
         if showheader:
@@ -2860,10 +2886,15 @@ def perform(update):
         ### Calculate all objects (visible, invisible)
         line = newline
         oline = ''
+
+        # Loop through each param section and build the output string
         for o in totlist:
             o.extract()
+
             if o in vislist:
                 line = line + o.show() + o.showend(totlist, vislist)
+
+            # Prep the line for the CSV file
             if op.output and step == op.delay:
                 oline = oline + o.showcsv() + o.showcsvend(totlist, vislist)
 
@@ -2889,7 +2920,7 @@ def perform(update):
                 sys.stdout.write('%s%6.2f %s%d:%d:%d%s' % (theme['roundtrip'], totaltime / step, theme['debug'], loop, step, update, theme['input']))
 
         if missed > 0:
-#            sys.stdout.write(' '+theme['error']+'= warn =')
+            # sys.stdout.write(' '+theme['error']+'= warn =')
             sys.stdout.write(' ' + theme['error'] + 'missed ' + str(missed+1) + ' ticks' + theme['input'])
             missed = 0
 

@@ -1,5 +1,13 @@
 #!/usr/bin/bash
 
+START_DIR=$(pwd)
+
+# Find and change to the build script dir so the rest of our
+# commands can use relative paths
+BUILD_SCRIPT_FILE=$(realpath $0)
+BUILD_SCRIPT_PATH=$(dirname $BUILD_SCRIPT_FILE=)
+cd $BUILD_SCRIPT_PATH
+
 red="\033[1;31m"
 white="\033[1;37m"
 reset="\033[0m"
@@ -33,11 +41,14 @@ rpmbuild --target noarch -bb dool.spec
 if [[ $? -eq 0 ]]
 then
 	echo -e $white
-	echo -e "\n* Build successful\n"
-	ls -lsah ~/rpmbuild/RPMS/noarch/dool-$VERSION-1.noarch.rpm
+	echo -e "\n* RPM Build successful:$reset\n"
+	mv ~/rpmbuild/RPMS/noarch/dool-$VERSION-1.noarch.rpm /var/tmp/
+	ls --color -lsah /var/tmp/dool-$VERSION-1.noarch.rpm
 else
 	echo -e $red
 	echo "Error building RPM... exit code $?"
 fi
 
 echo -e $reset
+
+cd $START_DIR
